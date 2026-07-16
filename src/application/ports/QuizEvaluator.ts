@@ -2,8 +2,8 @@ import type { GeneratedQuiz } from "../../domain/schemas/generatedQuiz.schema";
 
 export interface QuizEvaluationInput {
   quizId: string;
+  /** Guidance text is resolved by the adapter (via PromptProvider), not the caller. */
   strategyId: string;
-  strategyGuidance: string;
   sourceContent: string;
   quiz: GeneratedQuiz;
 }

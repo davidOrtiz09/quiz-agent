@@ -2,6 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import type { PromptProvider } from "../../application/ports/PromptProvider";
 import type { QuizGenerator, QuizGeneratorInput } from "../../application/ports/QuizGenerator";
 import type { Tracer } from "../../application/ports/Tracer";
+import { getStrategyById } from "../../application/strategies/registry";
 import { generatedQuizSchema, type GeneratedQuiz } from "../../domain/schemas/generatedQuiz.schema";
 import { getEnv } from "../../shared/env";
 import { UpstreamError, ValidationError } from "../../shared/errors";
@@ -22,14 +23,23 @@ export class LangChainGroqGenerator implements QuizGenerator {
       throw new UpstreamError("GROQ_API_KEY is not configured");
     }
 
-    const promptHandle = await this.promptProvider.getPrompt(QUIZ_GENERATION_PROMPT_NAME);
+    const strategy = getStrategyById(input.strategyId);
+    if (!strategy) {
+      throw new ValidationError(`Unknown strategy: ${input.strategyId}`);
+    }
+
+    const [promptHandle, strategyPromptHandle] = await Promise.all([
+      this.promptProvider.getPrompt(QUIZ_GENERATION_PROMPT_NAME),
+      this.promptProvider.getPrompt(strategy.promptName),
+    ]);
+    const strategyGuidance = strategyPromptHandle.compile({});
 
     const topicInstruction = input.topic ? `Focus the quiz specifically on: ${input.topic}.` : "";
 
     const promptText = promptHandle.compile({
       numQuestions: String(input.numQuestions),
       topicInstruction,
-      strategyGuidance: input.strategyGuidance,
+      strategyGuidance,
       content: input.content,
     });
 
