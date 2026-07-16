@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum QuestionType {
+  SINGLE
+  MULTIPLE
+}
+
+enum QuizStatus {
+  GENERATING
+  READY
+  COMPLETED
+}
+
+enum JudgeStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model Quiz {
+  id           String       @id @default(cuid())
+  sourceUrl    String
+  topic        String?
+  strategy     String
+  numQuestions Int
+  status       QuizStatus   @default(GENERATING)
+  finalScore   Float?
+  finalPercent Float?
+  judgeScore   Float?
+  judgeStatus  JudgeStatus?
+  createdAt    DateTime     @default(now())
+  completedAt  DateTime?
+
+  questions Question[]
+  responses Response[]
+}
+
+model Question {
+  id       String       @id @default(cuid())
+  quizId   String
+  quiz     Quiz         @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  text     String
+  type     QuestionType
+  position Int
+  weight   Float
+
+  options   Option[]
+  responses Response[]
+
+  @@index([quizId])
+}
+
+model Option {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean
+  position   Int
+
+  @@index([questionId])
+}
+
+model Response {
+  id     String @id @default(cuid())
+  quizId String
+  quiz   Quiz   @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  questionId String   @unique
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  /// JSON-encoded array of selected option ids
+  selectedOptionIds String
+  rawScore          Float
+  createdAt         DateTime @default(now())
+
+  @@index([quizId])
+}

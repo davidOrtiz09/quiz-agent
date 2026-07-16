@@ -1,5 +1,6 @@
 import type { JudgeStatus, QuizStatus } from "../value-objects/QuizStatus";
 import type { PublicQuizQuestion, QuizQuestion } from "./Question";
+import type { QuizResponse } from "./Response";
 
 export interface Quiz {
   id: string;
@@ -15,6 +16,8 @@ export interface Quiz {
   createdAt: Date;
   completedAt: Date | null;
   questions: QuizQuestion[];
+  /** Empty until the quiz is submitted. */
+  responses: QuizResponse[];
 }
 
 /** Quiz shape safe to send to the client before submission — no answer key. */
