@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 export interface StrategyDefinition {
   id: string;
   label: string;
@@ -39,6 +41,10 @@ export const STRATEGIES: StrategyDefinition[] = [
 ];
 
 export const STRATEGY_IDS = STRATEGIES.map((s) => s.id) as [string, ...string[]];
+
+/** The request-validation enum is derived from the registry — adding a strategy above
+ * automatically makes it a valid `strategy` value for POST /api/quizzes. */
+export const strategyIdSchema = z.enum(STRATEGY_IDS);
 
 export function getStrategyById(id: string): StrategyDefinition | undefined {
   return STRATEGIES.find((s) => s.id === id);
