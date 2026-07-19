@@ -9,7 +9,7 @@ function compileFallback(template: string, variables: Record<string, string>): s
   return Object.entries(variables).reduce((text, [key, value]) => text.split(`{{${key}}}`).join(value), template);
 }
 
-function fallbackHandle(name: string, variables?: Record<string, string>): PromptHandle {
+function fallbackHandle(name: string): PromptHandle {
   const template = FALLBACK_PROMPTS[name];
   if (template === undefined) {
     throw new Error(`No fallback registered for prompt "${name}" — every prompt must have one.`);
