@@ -9,7 +9,7 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   reporter: "list",
-  timeout: 120_000,
+  timeout: 240_000,
   use: {
     baseURL: "http://localhost:3000",
     trace: "retain-on-failure",

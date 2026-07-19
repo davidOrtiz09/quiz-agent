@@ -4,7 +4,10 @@ import { normalizeMarkdownUrl } from "./githubUrl";
 import { assertSafeUrl, UnsafeUrlError } from "./urlSafety";
 
 const FETCH_TIMEOUT_MS = 10_000;
-const MAX_CONTENT_CHARS = 40_000;
+// ~6K tokens. Sized so a generation plus its trailing LLM-judge call fit together inside
+// Groq's free-tier tokens-per-minute window — 40K chars worked but throttled back-to-back
+// runs (each quiz costs ~2x its content: generate now, judge in the background right after).
+const MAX_CONTENT_CHARS = 24_000;
 
 export class HttpMarkdownFetcher implements MarkdownFetcher {
   async fetch(rawUrl: string): Promise<string> {

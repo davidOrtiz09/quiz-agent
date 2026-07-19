@@ -8,7 +8,9 @@ import { expect, test } from "@playwright/test";
  */
 test.skip(!process.env.GROQ_API_KEY, "requires GROQ_API_KEY to exercise the real LLM");
 
-const README_PRESETS = ["Pipecat README", "LangChain.js README"];
+// Smallest source first: both tests share Groq's free-tier tokens-per-minute window
+// (along with each quiz's background judge call), so the token-heavy pipecat run goes last.
+const README_PRESETS = ["LangChain.js README", "Pipecat README"];
 
 for (const presetLabel of README_PRESETS) {
   test(`generate, take, and review a quiz from the ${presetLabel}`, async ({ page }) => {
@@ -24,8 +26,9 @@ for (const presetLabel of README_PRESETS) {
     await page.locator("#numQuestions").selectOption("5");
     await page.getByRole("button", { name: /Generate Quiz/i }).click();
 
-    // Real generation can take up to ~a minute.
-    await page.waitForURL(/\/quiz\/.+/, { timeout: 90_000 });
+    // Real generation is normally a few seconds, but Groq's free tier can throttle a
+    // request behind a ~60s retry-after when the tokens-per-minute window is exhausted.
+    await page.waitForURL(/\/quiz\/.+/, { timeout: 150_000 });
 
     const questionItems = page.locator("main ol > li");
     await expect(questionItems).toHaveCount(5);

@@ -6,7 +6,6 @@ import { getStrategyById } from "../../application/strategies/registry";
 import { generatedQuizSchema, type GeneratedQuiz } from "../../domain/schemas/generatedQuiz.schema";
 import { getEnv } from "../../shared/env";
 import { UpstreamError, ValidationError } from "../../shared/errors";
-import { isRetryableLlmError, retryWithBackoff } from "../../shared/retry";
 import { QUIZ_GENERATION_PROMPT_NAME } from "./prompts/fallbacks";
 
 const MAX_VALIDATION_ATTEMPTS = 2;
@@ -43,10 +42,14 @@ export class LangChainGroqGenerator implements QuizGenerator {
       content: input.content,
     });
 
+    // Retries live in ONE place: the LangChain/groq-sdk layer, which honors Groq's
+    // retry-after on 429s. (Its default of 6 attempts stacks badly with rate limits —
+    // a single throttled generation could hide behind minutes of silent sleeping.)
     const model = new ChatGroq({
       apiKey: env.GROQ_API_KEY,
       model: env.GROQ_MODEL,
       temperature: 0.4,
+      maxRetries: 2,
     });
 
     const structuredModel = model.withStructuredOutput(generatedQuizSchema, {
@@ -68,13 +71,9 @@ export class LangChainGroqGenerator implements QuizGenerator {
       for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
         let raw: unknown;
         try {
-          raw = await retryWithBackoff(
-            () =>
-              structuredModel.invoke(promptText, {
-                callbacks: callbackHandler ? [callbackHandler] : undefined,
-              }),
-            { retries: 2, isRetryable: isRetryableLlmError },
-          );
+          raw = await structuredModel.invoke(promptText, {
+            callbacks: callbackHandler ? [callbackHandler] : undefined,
+          });
         } catch (error) {
           throw new UpstreamError(`Quiz generation failed: ${(error as Error).message}`);
         }

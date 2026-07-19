@@ -13,6 +13,11 @@ const judgeOutputSchema = z.object({
   reasoning: z.string(),
 });
 
+// The judge spot-checks grounding and strategy fit — it doesn't need the full source the
+// generator saw. A smaller excerpt keeps the background call from competing with the next
+// user-facing generation for Groq's free-tier tokens-per-minute budget.
+const MAX_JUDGE_SOURCE_CHARS = 8_000;
+
 /**
  * LLM-as-judge: scores a freshly-generated quiz for groundedness and strategy fit.
  * Always runs AFTER the quiz has already been persisted and returned to the user (see
@@ -39,11 +44,13 @@ export class LangChainQuizEvaluator implements QuizEvaluator {
       const judgePromptHandle = await this.promptProvider.getPrompt(QUIZ_EVALUATION_PROMPT_NAME);
       const promptText = judgePromptHandle.compile({
         strategyGuidance,
-        content: input.sourceContent,
+        content: input.sourceContent.slice(0, MAX_JUDGE_SOURCE_CHARS),
         quizJson: JSON.stringify(input.quiz),
       });
 
-      const model = new ChatGroq({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL, temperature: 0 });
+      // No retries: this is a background nice-to-have, and silent retry sleeps would keep
+      // competing with user-facing generations for the free tier's tokens-per-minute budget.
+      const model = new ChatGroq({ apiKey: env.GROQ_API_KEY, model: env.GROQ_MODEL, temperature: 0, maxRetries: 0 });
       const structuredModel = model.withStructuredOutput(judgeOutputSchema, { name: "judge_quiz" });
 
       const handler = createLangfuseCallbackHandler({
