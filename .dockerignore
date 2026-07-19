@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.env
+.env.local
+.env.*.local
+prisma/*.db
+prisma/*.db-journal
+prisma/*.db-wal
+prisma/*.db-shm
+src/generated
+test-results
+playwright-report
+coverage
+*.tsbuildinfo
+npm-debug.log*
+Technical Task*.pdf

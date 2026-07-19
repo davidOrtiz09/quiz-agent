@@ -1,0 +1,44 @@
+# Optional, self-hosted Langfuse (v2) for local observability + prompt management.
+# Run with: docker compose -f docker-compose.langfuse.yml up -d
+#
+# Langfuse needs its own datastore (Postgres) — it cannot share the app's SQLite file.
+# After it's up, open http://localhost:3001, create a project, and put its keys into
+# .env as LANGFUSE_BASEURL=http://localhost:3001, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY.
+# Then run `npm run seed:langfuse-prompts` to populate the prompts.
+#
+# Switching to Langfuse Cloud instead is a pure env change — no code or app-compose change.
+
+services:
+  langfuse-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  langfuse:
+    image: langfuse/langfuse:2
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3001:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3001
+      # Demo-only secrets — replace with generated values for anything beyond local use.
+      NEXTAUTH_SECRET: local-dev-nextauth-secret-change-me
+      SALT: local-dev-salt-change-me
+      TELEMETRY_ENABLED: "false"
+
+volumes:
+  langfuse-db-data:
