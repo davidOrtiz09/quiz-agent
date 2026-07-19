@@ -23,5 +23,6 @@ export interface QuizRepository {
     responses: ScoredResponseInput[],
     result: { finalScore: number; finalPercent: number },
   ): Promise<Quiz>;
-  updateJudgeResult(quizId: string, judgeScore: number, judgeStatus: "COMPLETED" | "FAILED"): Promise<void>;
+  /** judgeScore is null when the judge failed to run — distinct from a genuine zero rating. */
+  updateJudgeResult(quizId: string, judgeScore: number | null, judgeStatus: "COMPLETED" | "FAILED"): Promise<void>;
 }

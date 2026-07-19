@@ -133,7 +133,7 @@ export class FakeQuizRepository implements QuizRepository {
 
   async updateJudgeResult(
     quizId: string,
-    judgeScore: number,
+    judgeScore: number | null,
     judgeStatus: "COMPLETED" | "FAILED",
   ): Promise<void> {
     const quiz = this.quizzes.get(quizId);

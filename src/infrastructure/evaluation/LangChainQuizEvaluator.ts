@@ -66,7 +66,7 @@ export class LangChainQuizEvaluator implements QuizEvaluator {
       await this.quizRepository.updateJudgeResult(input.quizId, score, "COMPLETED");
     } catch (error) {
       console.error(`Quiz evaluation failed for quiz ${input.quizId}`, error);
-      await this.quizRepository.updateJudgeResult(input.quizId, 0, "FAILED").catch(() => {});
+      await this.quizRepository.updateJudgeResult(input.quizId, null, "FAILED").catch(() => {});
     }
   }
 }

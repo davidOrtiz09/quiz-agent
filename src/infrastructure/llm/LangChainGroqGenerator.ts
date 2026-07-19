@@ -81,7 +81,14 @@ export class LangChainGroqGenerator implements QuizGenerator {
 
         const parsed = generatedQuizSchema.safeParse(raw);
         if (parsed.success) {
-          return parsed.data;
+          // The schema only enforces the generic 5-8 range; the user asked for an exact count.
+          if (parsed.data.questions.length === input.numQuestions) {
+            return parsed.data;
+          }
+          lastValidationError = new Error(
+            `LLM returned ${parsed.data.questions.length} questions, expected ${input.numQuestions}`,
+          );
+          continue;
         }
         lastValidationError = parsed.error;
       }

@@ -6,6 +6,7 @@ import type {
 import type { Quiz } from "../../../domain/entities/Quiz";
 import { computeWeight } from "../../../domain/services/scoring";
 import type { Prisma, PrismaClient } from "../../../generated/prisma/client";
+import { ConflictError } from "../../../shared/errors";
 import { prisma as defaultClient } from "./client";
 
 const quizWithRelationsInclude = {
@@ -108,25 +109,34 @@ export class PrismaQuizRepository implements QuizRepository {
     responses: ScoredResponseInput[],
     result: { finalScore: number; finalPercent: number },
   ): Promise<Quiz> {
-    await this.client.$transaction([
-      this.client.response.createMany({
-        data: responses.map((response) => ({
-          quizId,
-          questionId: response.questionId,
-          selectedOptionIds: JSON.stringify(response.selectedOptionIds),
-          rawScore: response.rawScore,
-        })),
-      }),
-      this.client.quiz.update({
-        where: { id: quizId },
-        data: {
-          status: "COMPLETED",
-          finalScore: result.finalScore,
-          finalPercent: result.finalPercent,
-          completedAt: new Date(),
-        },
-      }),
-    ]);
+    try {
+      await this.client.$transaction([
+        this.client.response.createMany({
+          data: responses.map((response) => ({
+            quizId,
+            questionId: response.questionId,
+            selectedOptionIds: JSON.stringify(response.selectedOptionIds),
+            rawScore: response.rawScore,
+          })),
+        }),
+        this.client.quiz.update({
+          where: { id: quizId },
+          data: {
+            status: "COMPLETED",
+            finalScore: result.finalScore,
+            finalPercent: result.finalPercent,
+            completedAt: new Date(),
+          },
+        }),
+      ]);
+    } catch (error) {
+      // Two concurrent submits can both pass the use case's status check; the loser hits the
+      // Response.questionId unique constraint (P2002). Surface that as a 409, not a 500.
+      if ((error as { code?: string })?.code === "P2002") {
+        throw new ConflictError("This quiz has already been submitted");
+      }
+      throw error;
+    }
 
     const updated = await this.client.quiz.findUniqueOrThrow({
       where: { id: quizId },
@@ -138,7 +148,7 @@ export class PrismaQuizRepository implements QuizRepository {
 
   async updateJudgeResult(
     quizId: string,
-    judgeScore: number,
+    judgeScore: number | null,
     judgeStatus: "COMPLETED" | "FAILED",
   ): Promise<void> {
     await this.client.quiz.update({
