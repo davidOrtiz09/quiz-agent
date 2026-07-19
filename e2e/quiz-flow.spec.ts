@@ -58,8 +58,11 @@ for (const presetLabel of README_PRESETS) {
     await page.getByRole("button", { name: /Submit answers/i }).click();
     await page.waitForURL(/\/result\/.+/, { timeout: 30_000 });
 
-    await expect(page.getByText(/\/\s*4/)).toBeVisible();
-    await expect(page.getByText(/%/)).toBeVisible();
+    // Scope to the score header — "/4" also appears in every per-question points badge,
+    // so an unscoped getByText is a strict-mode violation.
+    const scoreHeader = page.locator("main header");
+    await expect(scoreHeader.getByText(/\/\s*4/)).toBeVisible();
+    await expect(scoreHeader.getByText(/%/)).toBeVisible();
     await expect(page.locator("main ol > li")).toHaveCount(5);
   });
 }

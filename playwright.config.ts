@@ -1,3 +1,6 @@
+// Load .env so the specs' GROQ_API_KEY skip-check sees the same config the app does —
+// without this, `npm run test:e2e` silently skips even with a valid key in .env.
+import "dotenv/config";
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
