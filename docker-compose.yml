@@ -1,6 +1,17 @@
+# Everything runs through Docker — no Node/npm needed on the host.
+#
+#   docker compose up --build                  # production app on http://localhost:3000
+#   docker compose --profile dev up dev        # dev server with hot reload (source bind-mounted)
+#   docker compose run --rm test               # unit tests (vitest)
+#   docker compose run --rm e2e                # E2E tests (Playwright, real LLM — needs GROQ_API_KEY)
+#
+# GROQ_API_KEY / LANGFUSE_* are interpolated from your shell or the .env file next to this file.
+
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: runner
     ports:
       - "3000:3000"
     environment:
@@ -21,6 +32,51 @@ services:
       retries: 3
       start_period: 15s
     restart: unless-stopped
+
+  # Hot-reload development: your working tree is bind-mounted; node_modules and .next stay
+  # in container-local volumes. After changing package.json, rebuild:
+  #   docker compose --profile dev build dev && docker compose --profile dev up --force-recreate dev
+  dev:
+    profiles: ["dev"]
+    build:
+      context: .
+      target: dev
+    command: sh -c "npx prisma migrate deploy && npx prisma generate && npm run dev"
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: file:./prisma/dev.db
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      LANGFUSE_BASEURL: ${LANGFUSE_BASEURL:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+
+  # Unit tests (vitest) — pure domain/application logic, no LLM/DB/network needed.
+  test:
+    profiles: ["test"]
+    build:
+      context: .
+      target: dev
+    command: npm test
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  # E2E (Playwright) against the real Groq LLM. Source is baked into the image, and the
+  # Playwright webServer boots the dev server inside this same container.
+  e2e:
+    profiles: ["e2e"]
+    build:
+      context: .
+      target: e2e
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
 
 volumes:
   quiz-data:

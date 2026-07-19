@@ -25,7 +25,38 @@ app rather than a proof of concept.
 - [Docker](#docker)
 - [Judgment calls](#judgment-calls)
 
-## Quick start
+## Quick start (Docker only — no Node/npm needed on the host)
+
+```bash
+cp .env.example .env        # then fill in GROQ_API_KEY at least
+docker compose up --build   # production app on http://localhost:3000
+```
+
+Open the app, pick one of the two preset READMEs (or paste any raw-markdown-serving URL),
+choose a strategy and question count, and generate a quiz.
+
+Everything else also runs through Docker:
+
+| Command | What it does |
+|---|---|
+| `docker compose up --build` | Production app (migrations apply automatically on start) |
+| `docker compose --profile dev up dev` | Dev server with hot reload (source bind-mounted) |
+| `docker compose run --rm test` | Unit tests (Vitest — domain + use-case logic, no LLM/network) |
+| `docker compose run --rm e2e` | Playwright E2E against the **real** Groq LLM (see note below) |
+
+After changing `package.json`, rebuild the dev image:
+`docker compose --profile dev build dev && docker compose --profile dev up --force-recreate dev`.
+
+> **E2E and Groq's free tier.** The E2E suite intentionally exercises the real LLM (no
+> mocking), which costs real tokens: a full run is roughly 13K tokens including the
+> background judge calls, against free-tier budgets of ~12K tokens/minute and 100K
+> tokens/day for `llama-3.3-70b-versatile` (limits are **per model**). If the day's budget
+> is spent, generations stall behind rate-limit retries and tests time out — that's quota,
+> not a bug. `GROQ_MODEL=openai/gpt-oss-20b docker compose run --rm e2e` runs the suite
+> against a different model's (separate) quota.
+
+<details>
+<summary>Local development without Docker (optional — needs Node 22+)</summary>
 
 ```bash
 npm install
@@ -34,19 +65,14 @@ npm run db:migrate          # creates prisma/dev.db and applies the schema
 npm run dev                 # http://localhost:3000
 ```
 
-Open the app, pick one of the two preset READMEs (or paste any raw-markdown-serving URL),
-choose a strategy and question count, and generate a quiz.
-
-Useful scripts:
-
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server |
+| `npm test` / `npm run test:e2e` | Unit tests / Playwright E2E |
 | `npm run build` / `npm run start` | Production build/run |
-| `npm test` | Vitest — domain + use-case unit tests |
-| `npm run test:e2e` | Playwright E2E (real LLM — needs `GROQ_API_KEY`) |
 | `npm run db:studio` | Browse the SQLite data in Prisma Studio |
 | `npm run seed:langfuse-prompts` | Push/update prompts in Langfuse (no-ops without Langfuse env vars) |
+
+</details>
 
 ## Architecture
 
@@ -269,24 +295,36 @@ failure, `500` unexpected).
   this is what demonstrates the payoff of the ports/clean-architecture design — the
   orchestration, validation, and scheduling logic are fully covered without a real database,
   LLM, or web server.
-- **E2E** (`npm run test:e2e`, needs `GROQ_API_KEY`) — Playwright drives the full browser flow
-  (config → generate → answer → submit → result) against the **real** Groq LLM, run once for
-  each of the two required READMEs (pipecat, langchainjs). Because generation is
-  nondeterministic, assertions target structure (exact question/option counts, input types,
-  a numeric score), never exact wording. Skips cleanly (not a failure) if the key is absent.
+- **E2E** (`docker compose run --rm e2e`, or `npm run test:e2e` locally; needs
+  `GROQ_API_KEY`) — Playwright drives the full browser flow (config → generate → answer →
+  submit → result) against the **real** Groq LLM, run once for each of the two required
+  READMEs (langchainjs first — it's the smaller source, and both tests share the free tier's
+  per-minute token window). Because generation is nondeterministic, assertions target
+  structure (exact question/option counts, input types, a numeric score), never exact
+  wording. Skips cleanly (not a failure) if the key is absent. Consumes real quota — see the
+  rate-limit note in [Quick start](#quick-start-docker-only--no-nodenpm-needed-on-the-host).
 
 ## Docker
 
-```bash
-docker compose up --build
-```
+The whole project runs through Docker — see [Quick start](#quick-start-docker-only--no-nodenpm-needed-on-the-host)
+for the four commands. How it's put together:
 
-Multi-stage build (`deps` → `builder` → `runner`), non-root user, migrations applied
-automatically on container start (`docker-entrypoint.sh` runs `prisma migrate deploy` before
-`next start`). The SQLite file lives in a named volume (`quiz-data`, mounted at `/app/data`,
-kept separate from the image's baked-in `/app/prisma` schema/migrations) so data survives
-container restarts. `GROQ_API_KEY`/`GROQ_MODEL`/`LANGFUSE_*` are passed through from your shell
-environment or a `.env` file next to `docker-compose.yml`.
+- **One Dockerfile, several targets.** `base` (Node 22 + OpenSSL, which Prisma's engines
+  need) → `deps` (npm ci) → `builder` (prisma generate + next build + `npm prune --omit=dev`)
+  → `runner` (slim production image, non-root user). A `dev` target backs the `dev`/`test`
+  compose services, and an `e2e` target adds Playwright's chromium **on the same Node 22
+  base** — deliberately not the official Playwright image, which ships Node 24, where the
+  dev server's outbound LLM calls died with "Premature close" during verification. E2E runs
+  on the runtime the app actually ships on.
+- **Production (`app`)**: migrations apply automatically on container start
+  (`docker-entrypoint.sh` runs `prisma migrate deploy` before `next start`); the SQLite file
+  lives in the `quiz-data` named volume mounted at `/app/data`, so data survives restarts.
+  The image ships without the dev toolchain (`npm prune --omit=dev`; typescript/playwright
+  remain as npm-mandated optional peers of prod deps, ~4% of the tree).
+- **Dev (`dev` profile)**: your working tree is bind-mounted for hot reload; `node_modules`
+  and `.next` stay in container-local volumes.
+- **Config**: `GROQ_API_KEY`/`GROQ_MODEL`/`LANGFUSE_*` are interpolated from your shell or
+  the `.env` file next to `docker-compose.yml`.
 
 Self-hosted Langfuse is a **separate, optional** compose file
 (`docker-compose.langfuse.yml`) — see [above](#prompts--observability-langfuse).
