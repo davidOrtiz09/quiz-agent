@@ -1,10 +1,13 @@
 import { GenerateQuizUseCase } from "../application/use-cases/GenerateQuizUseCase";
 import { GetQuizUseCase } from "../application/use-cases/GetQuizUseCase";
 import { SubmitQuizUseCase } from "../application/use-cases/SubmitQuizUseCase";
+import { LangChainQuizEvaluator } from "../infrastructure/evaluation/LangChainQuizEvaluator";
 import { LangChainGroqGenerator } from "../infrastructure/llm/LangChainGroqGenerator";
 import { LangfusePromptProvider } from "../infrastructure/llm/prompts/LangfusePromptProvider";
 import { HttpMarkdownFetcher } from "../infrastructure/markdown/HttpMarkdownFetcher";
+import { LangfuseTracer } from "../infrastructure/observability/LangfuseTracer";
 import { PrismaQuizRepository } from "../infrastructure/persistence/prisma/PrismaQuizRepository";
+import { NextAfterScheduler } from "../infrastructure/runtime/NextAfterScheduler";
 
 export interface Container {
   generateQuiz: GenerateQuizUseCase;
@@ -24,10 +27,19 @@ export function getContainer(): Container {
     const quizRepository = new PrismaQuizRepository();
     const markdownFetcher = new HttpMarkdownFetcher();
     const promptProvider = new LangfusePromptProvider();
-    const quizGenerator = new LangChainGroqGenerator(promptProvider);
+    const tracer = new LangfuseTracer();
+    const quizGenerator = new LangChainGroqGenerator(promptProvider, tracer);
+    const quizEvaluator = new LangChainQuizEvaluator(promptProvider, quizRepository);
+    const backgroundScheduler = new NextAfterScheduler();
 
     container = {
-      generateQuiz: new GenerateQuizUseCase(markdownFetcher, quizGenerator, quizRepository),
+      generateQuiz: new GenerateQuizUseCase(
+        markdownFetcher,
+        quizGenerator,
+        quizRepository,
+        quizEvaluator,
+        backgroundScheduler,
+      ),
       submitQuiz: new SubmitQuizUseCase(quizRepository),
       getQuiz: new GetQuizUseCase(quizRepository),
     };

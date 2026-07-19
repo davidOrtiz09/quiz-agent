@@ -64,30 +64,36 @@ export class LangChainGroqGenerator implements QuizGenerator {
 
     let lastValidationError: unknown;
 
-    for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
-      let raw: unknown;
-      try {
-        raw = await retryWithBackoff(
-          () =>
-            structuredModel.invoke(promptText, {
-              callbacks: callbackHandler ? [callbackHandler] : undefined,
-            }),
-          { retries: 2, isRetryable: isRetryableLlmError },
-        );
-      } catch (error) {
-        throw new UpstreamError(`Quiz generation failed: ${(error as Error).message}`);
+    try {
+      for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt++) {
+        let raw: unknown;
+        try {
+          raw = await retryWithBackoff(
+            () =>
+              structuredModel.invoke(promptText, {
+                callbacks: callbackHandler ? [callbackHandler] : undefined,
+              }),
+            { retries: 2, isRetryable: isRetryableLlmError },
+          );
+        } catch (error) {
+          throw new UpstreamError(`Quiz generation failed: ${(error as Error).message}`);
+        }
+
+        const parsed = generatedQuizSchema.safeParse(raw);
+        if (parsed.success) {
+          return parsed.data;
+        }
+        lastValidationError = parsed.error;
       }
 
-      const parsed = generatedQuizSchema.safeParse(raw);
-      if (parsed.success) {
-        return parsed.data;
-      }
-      lastValidationError = parsed.error;
+      throw new ValidationError(
+        `LLM produced an invalid quiz shape after ${MAX_VALIDATION_ATTEMPTS} attempt(s)`,
+        lastValidationError,
+      );
+    } finally {
+      // Flush now rather than relying on Langfuse's background timer, so traces are visible
+      // immediately (useful both for the live demo and for the async judge that follows).
+      await this.tracer?.flush();
     }
-
-    throw new ValidationError(
-      `LLM produced an invalid quiz shape after ${MAX_VALIDATION_ATTEMPTS} attempt(s)`,
-      lastValidationError,
-    );
   }
 }

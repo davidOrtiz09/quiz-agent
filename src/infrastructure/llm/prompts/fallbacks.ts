@@ -1,4 +1,5 @@
 export const QUIZ_GENERATION_PROMPT_NAME = "quiz-generation";
+export const QUIZ_EVALUATION_PROMPT_NAME = "quiz-evaluation";
 
 /**
  * In-code defaults for every prompt used by the app. Keys must match both the Langfuse
@@ -32,4 +33,22 @@ SOURCE MATERIAL:
   "quiz-strategy-factual": `Focus on concrete, specific facts stated in the document: exact names, commands, configuration keys, version numbers, or steps in a process. Avoid vague conceptual questions.`,
 
   "quiz-strategy-conceptual": `Focus on understanding: why the project or feature exists, how its components relate to each other, trade-offs, and when you'd use one approach over another. Avoid trivial fact lookups.`,
+
+  [QUIZ_EVALUATION_PROMPT_NAME]: `You are a strict QA reviewer for an auto-generated multiple-choice quiz.
+
+Strategy this quiz was supposed to follow: {{strategyGuidance}}
+
+Judge the quiz below against two criteria:
+1. Groundedness — every question and its correct answer(s) must be verifiably supported by the SOURCE MATERIAL, with no invented facts.
+2. Strategy fit — the questions should match the strategy guidance above.
+
+Respond with a score from 0.0 (completely fails both criteria) to 1.0 (fully grounded and on-strategy), plus a short one-sentence reasoning.
+
+SOURCE MATERIAL:
+"""
+{{content}}
+"""
+
+QUIZ (JSON):
+{{quizJson}}`,
 };
