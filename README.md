@@ -1,36 +1,304 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Quiz Agent
 
-## Getting Started
+Generate a short multiple-choice quiz from any Markdown file (e.g. a GitHub README), take it
+in the browser, and get a weighted score — built as a small, production-shaped Node.js/TypeScript
+app rather than a proof of concept.
 
-First, run the development server:
+- **LLM**: [Groq](https://console.groq.com) (free tier) via [LangChain.js](https://js.langchain.com)
+- **Persistence**: SQLite via [Prisma](https://www.prisma.io) 7
+- **Web UI + REST API**: [Next.js](https://nextjs.org) (App Router)
+- **Observability + prompt management**: [Langfuse](https://langfuse.com) (optional)
+- **Testing**: Vitest (unit + use-case) and Playwright (E2E, real LLM)
+- **Deployment**: Docker / Docker Compose
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Architecture](#architecture)
+- [Data model](#data-model)
+- [Data flow](#data-flow)
+- [Scoring](#scoring)
+- [Strategies](#strategies)
+- [Prompts & observability (Langfuse)](#prompts--observability-langfuse)
+- [REST API](#rest-api)
+- [Testing](#testing)
+- [Docker](#docker)
+- [Judgment calls](#judgment-calls)
+
+## Quick start
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env        # then fill in GROQ_API_KEY at least
+npm run db:migrate          # creates prisma/dev.db and applies the schema
+npm run dev                 # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open the app, pick one of the two preset READMEs (or paste any raw-markdown-serving URL),
+choose a strategy and question count, and generate a quiz.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Useful scripts:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server |
+| `npm run build` / `npm run start` | Production build/run |
+| `npm test` | Vitest — domain + use-case unit tests |
+| `npm run test:e2e` | Playwright E2E (real LLM — needs `GROQ_API_KEY`) |
+| `npm run db:studio` | Browse the SQLite data in Prisma Studio |
+| `npm run seed:langfuse-prompts` | Push/update prompts in Langfuse (no-ops without Langfuse env vars) |
 
-## Learn More
+## Architecture
 
-To learn more about Next.js, take a look at the following resources:
+The app follows **Clean Architecture**: dependencies only point inward. `domain` has zero
+external dependencies (no Next.js, no Prisma, no LangChain) — it can be unit-tested with
+nothing running. `application` orchestrates the domain via **ports** (interfaces); it doesn't
+know which concrete LLM, database, or web framework is behind them. `infrastructure` is where
+Groq, Prisma, and Langfuse actually get imported. `composition/container.ts` is the *only*
+place a concrete adapter and a use case are wired together.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+src/
+  domain/                     # Pure business rules — no I/O
+    entities/                 #   Quiz, Question, Option, Response
+    value-objects/             #   QuestionType, QuizStatus, JudgeStatus
+    schemas/                   #   generatedQuiz.schema.ts — Zod shape for LLM output
+    services/                  #   scoring.ts — weighted geometric average
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+  application/                 # Use cases — orchestrate domain via ports
+    ports/                     #   QuizRepository, QuizGenerator, MarkdownFetcher,
+                                #   PromptProvider, QuizEvaluator, Tracer, BackgroundScheduler
+    strategies/registry.ts     #   single source of truth for generation strategies
+    use-cases/                 #   GenerateQuizUseCase, SubmitQuizUseCase, GetQuizUseCase
+    dto/                       #   Zod request schemas for the API layer
 
-## Deploy on Vercel
+  infrastructure/               # Adapters implementing the ports
+    persistence/prisma/         #   PrismaQuizRepository, client singleton (WAL mode)
+    markdown/                   #   HttpMarkdownFetcher — SSRF-guarded fetch + GitHub URL fix-up
+    llm/                        #   LangChainGroqGenerator; prompts/ (Langfuse + fallbacks)
+    evaluation/                  #   LangChainQuizEvaluator — LLM-as-judge
+    observability/               #   LangfuseTracer
+    runtime/                     #   NextAfterScheduler — wraps next/server's after()
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+  composition/container.ts      # Wires adapters to use cases — the only place they meet
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+  app/                          # Next.js App Router = the "interface" layer
+    api/                        #   REST route handlers (thin controllers)
+    page.tsx, quiz/[id]/, result/[id]/  # Web UI
+
+  shared/                       # Cross-cutting: env validation, error types, retry helper
+```
+
+**Why this shape pays off in practice:** `domain/services/scoring.ts` and the Zod schema in
+`domain/schemas/` are tested with zero LLM/DB/HTTP (`src/domain/**/*.test.ts`). The use cases
+are tested against in-memory fakes for every port (`src/application/use-cases/__fakes__`,
+`*.test.ts`) — no real database or LLM call, still full coverage of the orchestration and
+validation logic. Swapping Groq for another provider, or SQLite for Postgres, only touches
+`infrastructure/` and `composition/container.ts` — nothing in `domain/` or `application/` changes.
+
+## Data model
+
+SQLite via Prisma (`prisma/schema.prisma`):
+
+```
+Quiz
+ ├─ id, sourceUrl, topic?, strategy, numQuestions
+ ├─ status: GENERATING | READY | COMPLETED
+ ├─ finalScore?, finalPercent?        (set once submitted)
+ ├─ judgeScore?, judgeStatus?         (set later, async, by the LLM-as-judge)
+ └─ questions: Question[]
+      ├─ text, type: SINGLE | MULTIPLE, position, weight (Float)
+      └─ options: Option[]
+           └─ text, isCorrect (Bool), position
+
+Response  (one per question, created only at submission time)
+ ├─ quizId, questionId (unique — one response per question)
+ ├─ selectedOptionIds: JSON-encoded string[]   (SQLite has no native array type)
+ └─ rawScore: Float
+```
+
+Notes on the modelling decisions:
+
+- **Weight is stored on the `Question` row, not recomputed at score time.** It's set once,
+  at generation time, from the question's position (`weight = 1.1^position`). This makes the
+  final score reproducible and auditable straight from the stored rows — you don't need to
+  re-derive "was this the 3rd question" from anything else.
+- **One `Quiz` row = one run/attempt.** There's no separate `Attempt` table. If multiple
+  people needed to take the *same* generated quiz independently, the natural extension is a
+  `Attempt` table (`quizId`, `userId`, its own `Response`s, its own final score) sitting
+  between `Quiz` and `Response` — deliberately left out here since the task describes a
+  single generate → take → score run per quiz.
+- **The answer key never reaches the client before submission.** `GET /api/quizzes/:id`
+  strips `isCorrect` from every option (`toPublicQuiz` in `domain/entities/Quiz.ts`);
+  `POST /api/quizzes/:id/submit` and `GET /api/quizzes/:id/result` are the only places the
+  full quiz (with `isCorrect`) is returned, and only once a submission exists.
+
+## Data flow
+
+```
+Browser
+  │
+  ├─ POST /api/quizzes {sourceUrl, topic?, strategy, numQuestions}
+  │     └─ GenerateQuizUseCase
+  │           1. MarkdownFetcher.fetch(sourceUrl)      — SSRF-checked, GitHub blob URL → raw
+  │           2. QuizGenerator.generate(...)            — Groq + LangChain, strict Zod schema
+  │           3. QuizRepository.create(...)              — persists Quiz+Question+Option, computes weight
+  │           4. schedule(QuizEvaluator.evaluate(...))    — fire-and-forget, via next/server's after()
+  │     ← sanitized Quiz (no isCorrect)
+  │
+  ├─ GET /api/quizzes/:id                                — sanitized Quiz, for rendering the quiz page
+  │
+  ├─ POST /api/quizzes/:id/submit {answers: [...]}
+  │     └─ SubmitQuizUseCase
+  │           1. validates every answer's questionId/optionIds actually belong to this quiz
+  │           2. rejects >1 selection on a SINGLE question
+  │           3. domain scoreQuestion() + computeFinalScore() — pure, no I/O
+  │           4. QuizRepository.recordSubmission(...)     — persists Responses, marks COMPLETED
+  │     ← full Quiz (answer key revealed) + per-question responses
+  │
+  └─ GET /api/quizzes/:id/result                          — same shape as submit's response;
+        409s if the quiz hasn't been submitted yet
+```
+
+The async judge (`QuizEvaluator`, step 4 above) runs **after** the response has already gone
+out — it never adds latency to quiz generation. It scores groundedness + strategy fit with its
+own Groq call, records the score on the `Quiz` row (`judgeScore`/`judgeStatus`) and, if Langfuse
+is configured, as a Langfuse score linked to its own trace. Every failure in this path is caught
+and logged, never thrown — nothing is waiting on it.
+
+## Scoring
+
+- **SINGLE-answer question:** 4 points if the one correct option was selected (and nothing
+  else), 0 otherwise.
+- **MULTIPLE-answer question:** `raw = clamp((#correct selected) − (#incorrect selected), 0, 4)`.
+  This is one reasonable reading of the task's "between 0 and 4 — number of correctly selected
+  answers" — it penalizes guessing every option. The literal alternative (just count correct
+  picks, no penalty for wrong ones) is a one-line change in `domain/services/scoring.ts`.
+- **Final score** is the weighted average of every question's raw score, where the weight of
+  the *i*-th question (0-indexed) is `1.1^i` — a geometric sequence starting at 1.0, growing
+  10% per question. `finalPercent = finalScore / 4`.
+- An **unanswered question is treated as a skip (raw score 0)**, not a rejected submission —
+  you can submit a partial attempt and every question still contributes to the average.
+
+All of this lives in one pure module, `domain/services/scoring.ts`, with unit tests in
+`scoring.test.ts` covering both question types, clamping, and the weighted-average math.
+
+## Strategies
+
+A strategy steers *how* the quiz is generated (e.g. "factual" vs. "conceptual"). They're
+defined in one place, `application/strategies/registry.ts`:
+
+```ts
+{ id: "factual", label: "Factual", description: "...", promptName: "quiz-strategy-factual" }
+```
+
+- **The registry is the single source of truth.** `GET /api/strategies` returns it (the UI's
+  dropdown is data-driven, not hardcoded), and the `strategy` field on `POST /api/quizzes` is
+  validated against a Zod enum *derived from this array* — an unknown strategy is a `400`.
+- **To add a strategy:** add an entry to the registry (and, optionally, create its prompt in
+  Langfuse — see below; an in-code fallback covers you if you don't). Nothing else changes.
+- **To remove one:** delete the entry. Past quizzes keep their stored `strategy` string for
+  history even after that.
+
+**Does a generated quiz "make sense" for its strategy?** Two different, independent checks:
+
+1. **Structural validity — synchronous, blocking.** `domain/schemas/generatedQuiz.schema.ts`
+   enforces 5–8 questions, exactly 4 options each, correct-option counts appropriate to the
+   question type, no duplicate option text, and **at least one MULTIPLE question** (so the
+   multi-answer scoring path is always exercised). `LangChainGroqGenerator` retries generation
+   once on a validation failure before giving up — the user can never receive a malformed quiz.
+2. **Quality/fit — asynchronous, non-blocking.** The LLM-as-judge (`LangChainQuizEvaluator`)
+   scores whether the questions are actually grounded in the source and match the strategy's
+   guidance. This runs in the background (see [Data flow](#data-flow)) precisely so a "how good
+   is this, really" check never slows down the response.
+
+## Prompts & observability (Langfuse)
+
+Langfuse is **optional** and serves two purposes here — LLM tracing and prompt management —
+both of which degrade gracefully:
+
+- **Tracing:** `LangfuseTracer` wraps LangChain's native `CallbackHandler`. When Langfuse env
+  vars are unset, `getCallbackHandler()` returns `undefined` and generation runs untraced.
+- **Prompts:** all four prompts (`quiz-generation`, `quiz-strategy-mixed/factual/conceptual`,
+  `quiz-evaluation`) live in Langfuse Prompt Management as the source of truth, fetched via
+  `LangfusePromptProvider`. **Every prompt has an in-code fallback** (`infrastructure/llm/prompts/fallbacks.ts`)
+  used automatically if Langfuse is unreachable or a prompt hasn't been created there yet —
+  the app is never hard-coupled to Langfuse being up.
+- The fetched prompt's **version** is attached to the generation's trace metadata, so you can
+  see in Langfuse exactly which prompt version produced which quiz.
+
+**Switching between Langfuse Cloud and self-hosted is a pure env change** — `LANGFUSE_BASEURL`,
+`LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`. No code changes either way.
+
+To run Langfuse locally (self-hosted Langfuse v2 + its own Postgres — Langfuse cannot use this
+app's SQLite file, it needs its own datastore):
+
+```bash
+docker compose -f docker-compose.langfuse.yml up -d
+# open http://localhost:3001, create a project, copy its public/secret keys into .env:
+#   LANGFUSE_BASEURL=http://localhost:3001
+#   LANGFUSE_PUBLIC_KEY=...
+#   LANGFUSE_SECRET_KEY=...
+npm run seed:langfuse-prompts   # idempotent — safe to re-run
+```
+
+Or point the same three env vars at [Langfuse Cloud](https://cloud.langfuse.com) instead —
+same seed script, no other changes.
+
+## REST API
+
+| Method | Path | Notes |
+|---|---|---|
+| `GET`  | `/api/strategies` | Drives the UI's strategy dropdown |
+| `POST` | `/api/quizzes` | `{ sourceUrl, topic?, strategy, numQuestions }` → sanitized Quiz |
+| `GET`  | `/api/quizzes/:id` | Sanitized Quiz (no answer key) |
+| `POST` | `/api/quizzes/:id/submit` | `{ answers: [{questionId, selectedOptionIds}] }` → full result |
+| `GET`  | `/api/quizzes/:id/result` | Full result; `409` until submitted |
+| `GET`  | `/api/health` | Pings the DB — used by Docker's healthcheck |
+
+Errors are consistent JSON: `{ "error": { "code": "...", "message": "..." } }` with the
+matching HTTP status (`400` validation, `404` not found, `409` conflict, `502` upstream/LLM
+failure, `500` unexpected).
+
+## Testing
+
+- **Unit** (`npm test`) — pure domain logic: scoring (both question types, clamping, the
+  weighted average) and the generated-quiz Zod schema. No LLM, DB, or HTTP.
+- **Use-case** (also `npm test`) — `GenerateQuizUseCase` / `SubmitQuizUseCase` against
+  in-memory fakes for every port (`application/use-cases/__fakes__`). Fast and deterministic;
+  this is what demonstrates the payoff of the ports/clean-architecture design — the
+  orchestration, validation, and scheduling logic are fully covered without a real database,
+  LLM, or web server.
+- **E2E** (`npm run test:e2e`, needs `GROQ_API_KEY`) — Playwright drives the full browser flow
+  (config → generate → answer → submit → result) against the **real** Groq LLM, run once for
+  each of the two required READMEs (pipecat, langchainjs). Because generation is
+  nondeterministic, assertions target structure (exact question/option counts, input types,
+  a numeric score), never exact wording. Skips cleanly (not a failure) if the key is absent.
+
+## Docker
+
+```bash
+docker compose up --build
+```
+
+Multi-stage build (`deps` → `builder` → `runner`), non-root user, migrations applied
+automatically on container start (`docker-entrypoint.sh` runs `prisma migrate deploy` before
+`next start`). The SQLite file lives in a named volume (`quiz-data`, mounted at `/app/data`,
+kept separate from the image's baked-in `/app/prisma` schema/migrations) so data survives
+container restarts. `GROQ_API_KEY`/`GROQ_MODEL`/`LANGFUSE_*` are passed through from your shell
+environment or a `.env` file next to `docker-compose.yml`.
+
+Self-hosted Langfuse is a **separate, optional** compose file
+(`docker-compose.langfuse.yml`) — see [above](#prompts--observability-langfuse).
+
+## Judgment calls
+
+A couple of places the task spec was ambiguous enough that a real decision had to be made —
+worth surfacing rather than hiding:
+
+- **Multiple-answer scoring**: penalizing wrong picks (`#correct − #incorrect`, clamped) vs.
+  literally counting only correct picks. Chosen: penalize, to discourage "select everything."
+  One-line swap in `domain/services/scoring.ts` if the literal reading is preferred.
+- **One quiz = one attempt** vs. a separate `Attempt` table for multiple people re-taking the
+  same generated quiz. Chosen: one run per quiz, for simplicity — see [Data model](#data-model)
+  for the natural extension.
