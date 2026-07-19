@@ -10,8 +10,9 @@ function createClient(): PrismaClient {
   const client = new PrismaClient({ adapter });
 
   // WAL mode lets the async LLM-judge write-back (see QuizEvaluator) happen without
-  // colliding with concurrent reads from the request path.
-  void client.$executeRawUnsafe("PRAGMA journal_mode = WAL;").catch((error: unknown) => {
+  // colliding with concurrent reads from the request path. Fire-and-forget is safe here:
+  // WAL is persistent on the database file, so once it has ever been set it stays set.
+  void client.$executeRaw`PRAGMA journal_mode = WAL;`.catch((error: unknown) => {
     console.error("Failed to enable SQLite WAL mode", error);
   });
 

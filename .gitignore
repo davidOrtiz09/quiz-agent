@@ -55,3 +55,6 @@ next-env.d.ts
 
 # generated prisma client
 /src/generated/
+
+# interview task statement (kept locally, not part of the app)
+Technical Task*.pdf

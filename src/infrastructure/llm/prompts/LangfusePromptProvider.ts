@@ -9,11 +9,7 @@ function compileFallback(template: string, variables: Record<string, string>): s
   return Object.entries(variables).reduce((text, [key, value]) => text.split(`{{${key}}}`).join(value), template);
 }
 
-function fallbackHandle(name: string): PromptHandle {
-  const template = FALLBACK_PROMPTS[name];
-  if (template === undefined) {
-    throw new Error(`No fallback registered for prompt "${name}" — every prompt must have one.`);
-  }
+function fallbackHandle(template: string): PromptHandle {
   return {
     compile: (vars) => compileFallback(template, vars),
     version: "fallback",
@@ -47,7 +43,7 @@ export class LangfusePromptProvider implements PromptProvider {
     }
 
     if (!this.client) {
-      return fallbackHandle(name);
+      return fallbackHandle(template);
     }
 
     try {
@@ -64,7 +60,7 @@ export class LangfusePromptProvider implements PromptProvider {
       };
     } catch (error) {
       console.error(`Langfuse getPrompt("${name}") failed, using in-code fallback`, error);
-      return fallbackHandle(name);
+      return fallbackHandle(template);
     }
   }
 }
