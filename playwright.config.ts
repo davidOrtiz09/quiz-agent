@@ -19,6 +19,11 @@ export default defineConfig({
   use: {
     baseURL,
     trace: "retain-on-failure",
+    // Demo mode (see the test:e2e:demo script): PW_CHANNEL=chrome launches the real installed
+    // Google Chrome instead of the bundled Chromium, and PW_SLOWMO adds a per-action pause so
+    // an audience can follow the clicks. Both are no-ops when unset.
+    channel: process.env.PW_CHANNEL,
+    launchOptions: { slowMo: Number(process.env.PW_SLOWMO ?? 0) },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: externalBaseUrl

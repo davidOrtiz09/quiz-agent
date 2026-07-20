@@ -69,6 +69,7 @@ npm run dev                 # http://localhost:3000
 | Command | What it does |
 |---|---|
 | `npm test` / `npm run test:e2e` | Unit tests / Playwright E2E |
+| `npm run test:e2e:demo` | **Demo mode**: opens your real Chrome and visibly clicks through both tests in slow motion |
 | `npm run build` / `npm run start` | Production build/run |
 | `npm run db:studio` | Browse the SQLite data in Prisma Studio |
 | `npm run seed:langfuse-prompts` | Push/update prompts in Langfuse (no-ops without Langfuse env vars) |
