@@ -43,6 +43,7 @@ Everything else also runs through Docker:
 | `docker compose --profile dev up dev` | Dev server with hot reload (source bind-mounted) |
 | `docker compose run --rm test` | Unit tests (Vitest — domain + use-case logic, no LLM/network) |
 | `docker compose run --rm e2e` | Playwright E2E against the **real** Groq LLM (see note below) |
+| `docker compose --profile e2e up e2e-ui` | Watchable E2E — open http://localhost:8080, press play, and see the tests drive the app live |
 
 After changing `package.json`, rebuild the dev image:
 `docker compose --profile dev build dev && docker compose --profile dev up --force-recreate dev`.

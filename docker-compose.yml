@@ -78,5 +78,21 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
 
+  # Watchable E2E: same image, but serves Playwright's UI mode over HTTP instead of running
+  # headless-and-silent. Start it, open http://localhost:8080 in your browser, press play,
+  # and watch the tests drive the app live (screencast + time-travel through every step).
+  #   docker compose --profile e2e up e2e-ui
+  e2e-ui:
+    profiles: ["e2e"]
+    build:
+      context: .
+      target: e2e
+    command: sh -c "npx prisma migrate deploy && npx playwright test --ui-host=0.0.0.0 --ui-port=8080"
+    ports:
+      - "8080:8080"
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+
 volumes:
   quiz-data:
