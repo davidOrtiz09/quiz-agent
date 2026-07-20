@@ -8,7 +8,18 @@ import { getEnv } from "../../shared/env";
 import { UpstreamError, ValidationError } from "../../shared/errors";
 import { QUIZ_GENERATION_PROMPT_NAME } from "./prompts/fallbacks";
 
-const MAX_VALIDATION_ATTEMPTS = 2;
+const MAX_VALIDATION_ATTEMPTS = 3;
+
+/**
+ * Groq occasionally emits *almost*-valid tool-call syntax (a stray token or unbalanced
+ * brace), which its parser rejects with a 400 `tool_use_failed`. That's a bad generation,
+ * not a transport problem — the right response is to regenerate, exactly like a schema
+ * miss. (The SDK layer correctly does NOT retry 400s on its own.)
+ */
+function isToolUseFailure(error: unknown): boolean {
+  const message = (error as Error | undefined)?.message ?? "";
+  return message.includes("tool_use_failed");
+}
 
 export class LangChainGroqGenerator implements QuizGenerator {
   constructor(
@@ -75,7 +86,13 @@ export class LangChainGroqGenerator implements QuizGenerator {
             callbacks: callbackHandler ? [callbackHandler] : undefined,
           });
         } catch (error) {
-          throw new UpstreamError(`Quiz generation failed: ${(error as Error).message}`);
+          if (isToolUseFailure(error)) {
+            lastValidationError = error;
+            continue;
+          }
+          // Log the full provider error server-side, but never leak its raw body to the client.
+          console.error("Quiz generation upstream failure", error);
+          throw new UpstreamError("Quiz generation failed — the language model provider returned an error");
         }
 
         const parsed = generatedQuizSchema.safeParse(raw);
@@ -92,9 +109,9 @@ export class LangChainGroqGenerator implements QuizGenerator {
         lastValidationError = parsed.error;
       }
 
+      console.error(`Quiz generation produced no valid quiz after ${MAX_VALIDATION_ATTEMPTS} attempts`, lastValidationError);
       throw new ValidationError(
-        `LLM produced an invalid quiz shape after ${MAX_VALIDATION_ATTEMPTS} attempt(s)`,
-        lastValidationError,
+        `The model could not produce a valid quiz after ${MAX_VALIDATION_ATTEMPTS} attempts — please try again`,
       );
     } finally {
       // Flush now rather than relying on Langfuse's background timer, so traces are visible
