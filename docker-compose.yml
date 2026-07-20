@@ -37,7 +37,9 @@ services:
   # in container-local volumes. After changing package.json, rebuild:
   #   docker compose --profile dev build dev && docker compose --profile dev up --force-recreate dev
   dev:
-    profiles: ["dev"]
+    # Also in the "e2e" profile: the e2e-ui service runs the tests against this container
+    # (one app container + one lean test container beats one giant container the VM OOM-kills).
+    profiles: ["dev", "e2e"]
     build:
       context: .
       target: dev
@@ -70,27 +72,33 @@ services:
   # E2E (Playwright) against the real Groq LLM. Source is baked into the image, and the
   # Playwright webServer boots the dev server inside this same container.
   e2e:
-    profiles: ["e2e"]
+    profiles: ["e2e-headless"]
     build:
       context: .
       target: e2e
+    shm_size: "1gb" # Chromium needs more than Docker's 64MB /dev/shm default
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
 
-  # Watchable E2E: same image, but serves Playwright's UI mode over HTTP instead of running
-  # headless-and-silent. Start it, open http://localhost:8080 in your browser, press play,
-  # and watch the tests drive the app live (screencast + time-travel through every step).
+  # Watchable E2E: serves Playwright's UI mode over HTTP instead of running headless-and-silent.
   #   docker compose --profile e2e up e2e-ui
+  # then open http://localhost:8080, press play, and watch the tests drive the app live
+  # (screencast + time-travel through every step). The app under test runs in the separate
+  # `dev` container — keeping this one lean so the VM doesn't OOM-kill it mid-run.
   e2e-ui:
     profiles: ["e2e"]
     build:
       context: .
       target: e2e
-    command: sh -c "npx prisma migrate deploy && npx playwright test --ui-host=0.0.0.0 --ui-port=8080"
+    depends_on:
+      - dev
+    shm_size: "1gb"
+    command: npx playwright test --ui-host=0.0.0.0 --ui-port=8080
     ports:
       - "8080:8080"
     environment:
+      PLAYWRIGHT_BASE_URL: http://dev:3000
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
 
