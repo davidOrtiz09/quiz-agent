@@ -1,11 +1,11 @@
-import type { Quiz } from "../../../domain/entities/Quiz";
-import type { GeneratedQuiz } from "../../../domain/schemas/generatedQuiz.schema";
-import { computeWeight } from "../../../domain/services/scoring";
-import type { BackgroundScheduler } from "../../ports/BackgroundScheduler";
-import type { MarkdownFetcher } from "../../ports/MarkdownFetcher";
-import type { QuizEvaluationInput, QuizEvaluator } from "../../ports/QuizEvaluator";
-import type { QuizGenerator, QuizGeneratorInput } from "../../ports/QuizGenerator";
-import type { CreateQuizInput, QuizRepository, ScoredResponseInput } from "../../ports/QuizRepository";
+import type { Quiz } from "@/domain/entities/Quiz";
+import type { GeneratedQuiz } from "@/domain/schemas/generatedQuiz.schema";
+import { computeWeight } from "@/domain/services/scoring";
+import type { BackgroundScheduler } from "@/application/ports/BackgroundScheduler";
+import type { MarkdownFetcher } from "@/application/ports/MarkdownFetcher";
+import type { QuizEvaluationInput, QuizEvaluator } from "@/application/ports/QuizEvaluator";
+import type { QuizGenerator, QuizGeneratorInput } from "@/application/ports/QuizGenerator";
+import type { CreateQuizInput, QuizRepository, ScoredResponseInput } from "@/application/ports/QuizRepository";
 
 export function sampleGeneratedQuiz(): GeneratedQuiz {
   return {

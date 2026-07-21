@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMarkdownUrl } from "./githubUrl";
+import { normalizeMarkdownUrl } from "@/infrastructure/markdown/githubUrl";
 
 describe("normalizeMarkdownUrl", () => {
   it("rewrites a github.com blob URL to raw.githubusercontent.com", () => {

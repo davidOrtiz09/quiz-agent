@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { QuizOption } from "../entities/Option";
-import { computeFinalScore, computeWeight, QUESTION_MAX_SCORE, scoreQuestion } from "./scoring";
+import type { QuizOption } from "@/domain/entities/Option";
+import { computeFinalScore, computeWeight, QUESTION_MAX_SCORE, scoreQuestion } from "@/domain/services/scoring";
 
 function makeOptions(correctFlags: boolean[]): QuizOption[] {
   return correctFlags.map((isCorrect, i) => ({

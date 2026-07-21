@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSafeUrl, isPrivateOrReservedIp, UnsafeUrlError } from "./urlSafety";
+import { assertSafeUrl, isPrivateOrReservedIp, UnsafeUrlError } from "@/infrastructure/markdown/urlSafety";
 
 describe("isPrivateOrReservedIp", () => {
   it("flags loopback addresses", () => {

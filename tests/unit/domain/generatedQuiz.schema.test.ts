@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { generatedQuizSchema } from "./generatedQuiz.schema";
+import { generatedQuizSchema } from "@/domain/schemas/generatedQuiz.schema";
 
 function validQuestion(overrides: Partial<Record<string, unknown>> = {}) {
   return {

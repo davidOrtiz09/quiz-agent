@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { computeFinalScore, scoreQuestion } from "../../domain/services/scoring";
-import { ConflictError, NotFoundError, ValidationError } from "../../shared/errors";
-import { FakeQuizRepository, sampleGeneratedQuiz } from "./__fakes__/fakes";
-import { SubmitQuizUseCase } from "./SubmitQuizUseCase";
+import { computeFinalScore, scoreQuestion } from "@/domain/services/scoring";
+import { ConflictError, NotFoundError, ValidationError } from "@/shared/errors";
+import { FakeQuizRepository, sampleGeneratedQuiz } from "./fakes";
+import { SubmitQuizUseCase } from "@/application/use-cases/SubmitQuizUseCase";
 
 async function seedQuiz(repository: FakeQuizRepository) {
   return repository.create({

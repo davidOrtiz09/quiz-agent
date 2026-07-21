@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ValidationError } from "../../shared/errors";
+import { ValidationError } from "@/shared/errors";
 import {
   FakeBackgroundScheduler,
   FakeMarkdownFetcher,
@@ -7,8 +7,8 @@ import {
   FakeQuizGenerator,
   FakeQuizRepository,
   sampleGeneratedQuiz,
-} from "./__fakes__/fakes";
-import { GenerateQuizUseCase } from "./GenerateQuizUseCase";
+} from "./fakes";
+import { GenerateQuizUseCase } from "@/application/use-cases/GenerateQuizUseCase";
 
 function makeUseCase(overrides: Partial<{ evaluator: FakeQuizEvaluator; scheduler: FakeBackgroundScheduler }> = {}) {
   const markdownFetcher = new FakeMarkdownFetcher("# Some README content");

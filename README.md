@@ -114,13 +114,17 @@ src/
     api/                        #   REST route handlers (thin controllers)
     page.tsx, quiz/[id]/, result/[id]/  # Web UI
 
-  shared/                       # Cross-cutting: env validation, error types, retry helper
+  shared/                       # Cross-cutting: env validation, error types
+
+tests/
+  unit/                         # Vitest — mirrors src/ (domain, application, infrastructure)
+  e2e/                          # Playwright — full browser flow against the real LLM
 ```
 
 **Why this shape pays off in practice:** `domain/services/scoring.ts` and the Zod schema in
-`domain/schemas/` are tested with zero LLM/DB/HTTP (`src/domain/**/*.test.ts`). The use cases
-are tested against in-memory fakes for every port (`src/application/use-cases/__fakes__`,
-`*.test.ts`) — no real database or LLM call, still full coverage of the orchestration and
+`domain/schemas/` are tested with zero LLM/DB/HTTP (`tests/unit/domain/`). The use cases
+are tested against in-memory fakes for every port (`tests/unit/application/fakes.ts`
+and its `*.test.ts` neighbors) — no real database or LLM call, still full coverage of the orchestration and
 validation logic. Swapping Groq for another provider, or SQLite for Postgres, only touches
 `infrastructure/` and `composition/container.ts` — nothing in `domain/` or `application/` changes.
 
@@ -209,7 +213,7 @@ and logged, never thrown — nothing is waiting on it.
   you can submit a partial attempt and every question still contributes to the average.
 
 All of this lives in one pure module, `domain/services/scoring.ts`, with unit tests in
-`scoring.test.ts` covering both question types, clamping, and the weighted-average math.
+`tests/unit/domain/scoring.test.ts` covering both question types, clamping, and the weighted-average math.
 
 ## Strategies
 
@@ -293,7 +297,7 @@ failure, `500` unexpected).
 - **Unit** (`npm test`) — pure domain logic: scoring (both question types, clamping, the
   weighted average) and the generated-quiz Zod schema. No LLM, DB, or HTTP.
 - **Use-case** (also `npm test`) — `GenerateQuizUseCase` / `SubmitQuizUseCase` against
-  in-memory fakes for every port (`application/use-cases/__fakes__`). Fast and deterministic;
+  in-memory fakes for every port (`tests/unit/application/fakes.ts`). Fast and deterministic;
   this is what demonstrates the payoff of the ports/clean-architecture design — the
   orchestration, validation, and scheduling logic are fully covered without a real database,
   LLM, or web server.
