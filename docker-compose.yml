@@ -20,7 +20,10 @@ services:
       GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
       # Point these at Langfuse Cloud or the optional docker-compose.langfuse.yml stack.
       # Leave blank to run with tracing/prompt-fetch disabled (in-code fallbacks are used).
-      LANGFUSE_BASEURL: ${LANGFUSE_BASEURL:-}
+      # LANGFUSE_BASEURL_DOCKER exists because "localhost" means something different inside
+      # this container — for the local self-hosted stack it should be http://langfuse:3000
+      # (same compose network), while host tools use LANGFUSE_BASEURL=http://localhost:3001.
+      LANGFUSE_BASEURL: ${LANGFUSE_BASEURL_DOCKER:-${LANGFUSE_BASEURL:-}}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
     volumes:

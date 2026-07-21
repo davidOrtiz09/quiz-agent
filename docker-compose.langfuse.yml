@@ -2,9 +2,12 @@
 # Run with: docker compose -f docker-compose.langfuse.yml up -d
 #
 # Langfuse needs its own datastore (Postgres) — it cannot share the app's SQLite file.
-# After it's up, open http://localhost:3001, create a project, and put its keys into
-# .env as LANGFUSE_BASEURL=http://localhost:3001, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY.
-# Then run `npm run seed:langfuse-prompts` to populate the prompts.
+#
+# The LANGFUSE_INIT_* vars below headlessly provision everything on first boot — user,
+# org, project, and API keys — so no signup clicking is needed. Put the same keys into
+# .env (LANGFUSE_BASEURL=http://localhost:3001 + the pk/sk below), restart the app, and
+# run `npm run seed:langfuse-prompts`. UI login: demo@quiz-agent.local / QuizAgent-Demo-2026.
+# All values here are local-demo-only; replace for anything beyond localhost.
 #
 # Switching to Langfuse Cloud instead is a pure env change — no code or app-compose change.
 
@@ -39,6 +42,16 @@ services:
       NEXTAUTH_SECRET: local-dev-nextauth-secret-change-me
       SALT: local-dev-salt-change-me
       TELEMETRY_ENABLED: "false"
+      # Headless provisioning (runs once on a fresh database; skipped if the org exists).
+      LANGFUSE_INIT_ORG_ID: quiz-agent-org
+      LANGFUSE_INIT_ORG_NAME: Quiz Agent
+      LANGFUSE_INIT_PROJECT_ID: quiz-agent-project
+      LANGFUSE_INIT_PROJECT_NAME: quiz-agent
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-quiz-agent-local-demo
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-quiz-agent-local-demo
+      LANGFUSE_INIT_USER_EMAIL: demo@quiz-agent.local
+      LANGFUSE_INIT_USER_NAME: Demo
+      LANGFUSE_INIT_USER_PASSWORD: QuizAgent-Demo-2026
 
 volumes:
   langfuse-db-data:

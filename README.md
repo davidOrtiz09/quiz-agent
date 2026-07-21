@@ -267,11 +267,15 @@ app's SQLite file, it needs its own datastore):
 
 ```bash
 docker compose -f docker-compose.langfuse.yml up -d
-# open http://localhost:3001, create a project, copy its public/secret keys into .env:
-#   LANGFUSE_BASEURL=http://localhost:3001
-#   LANGFUSE_PUBLIC_KEY=...
-#   LANGFUSE_SECRET_KEY=...
-npm run seed:langfuse-prompts   # idempotent — safe to re-run
+# The stack self-provisions on first boot (LANGFUSE_INIT_* in the compose file): user, org,
+# project, and API keys — no signup clicking. Put the matching values into .env:
+#   LANGFUSE_BASEURL="http://localhost:3001"            # host tools (seed script, npm run dev)
+#   LANGFUSE_BASEURL_DOCKER="http://langfuse:3000"      # the Docker app reaches it by service name
+#   LANGFUSE_PUBLIC_KEY="pk-lf-quiz-agent-local-demo"
+#   LANGFUSE_SECRET_KEY="sk-lf-quiz-agent-local-demo"
+docker compose up -d --force-recreate app   # app picks up the env
+npm run seed:langfuse-prompts               # idempotent — safe to re-run
+# UI: http://localhost:3001 — log in as demo@quiz-agent.local / QuizAgent-Demo-2026
 ```
 
 Or point the same three env vars at [Langfuse Cloud](https://cloud.langfuse.com) instead —
